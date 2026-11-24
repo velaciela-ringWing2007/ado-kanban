@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ADO手元カンバン</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112,800&family=Archivo:wght@400;600&family=Noto+Sans+JP:wght@400;700&display=swap">
+<style>
+/* VOICE: 実務ツール。静かで、変化だけが赤く鳴る。
+   IDEA: 駅の発車標。レーンは番線、カードは列車、自動で動いたものだけ赤ランプ。
+   PICTURE: ボードそのもの。上に細いツールバー、すぐ下からレーン。
+   COLOUR and TYPE: 白/黒/シグナル赤 #e4002b/グレー。Archivo 極太の数字 + Noto Sans JP。
+   LAYOUT: 太い上罫、左揃え、レーンは横スクロール、狭い画面では縦積み。 */
+:root{color-scheme:light dark;--bg:light-dark(#fff,#0e0e0e);--ink:light-dark(#111,#eee);--mut:light-dark(#6b6b6b,#9a9a9a);--line:light-dark(#d9d9d9,#2c2c2c);--lane:light-dark(#f4f4f4,#171717);--card:light-dark(#fff,#1f1f1f);--red:#e4002b}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 Archivo,"Noto Sans JP",system-ui,sans-serif;overflow-x:clip}
+button,input,select,textarea{font:inherit;color:inherit}
+button{min-height:36px;padding:0 12px;border:1.5px solid var(--ink);background:var(--bg);border-radius:0;cursor:pointer;font-weight:600}
+button:hover{background:var(--ink);color:var(--bg)}
+button.red{border-color:var(--red);background:var(--red);color:#fff}
+button.ghost{border-color:transparent;min-height:28px;padding:0 6px;font-weight:400;color:var(--mut)}
+button.ghost:hover{background:var(--lane);color:var(--ink)}
+:focus-visible{outline:3px solid var(--red);outline-offset:2px}
+header{border-top:8px solid var(--ink);padding:14px max(3vw,14px) 10px;display:flex;flex-wrap:wrap;gap:10px 18px;align-items:end}
+h1{font:800 clamp(24px,3vw,34px)/1.05 Archivo,"Noto Sans JP",sans-serif;font-stretch:112%;margin:0;letter-spacing:-.01em}
+.tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;flex:1}
+.tools input[type=search]{height:36px;border:1.5px solid var(--line);padding:0 10px;width:min(240px,100%);font-size:16px;background:var(--bg)}
+.chk{display:flex;gap:6px;align-items:center;font-size:14px;cursor:pointer}
+.info{padding:0 max(3vw,14px) 8px;color:var(--mut);font-size:13px;display:flex;flex-wrap:wrap;gap:4px 14px}
+.info b{color:var(--ink)}.info .r{color:var(--red);font-weight:700}
+#drop{display:none;position:fixed;inset:0;background:color-mix(in srgb,var(--red) 14%,transparent);border:6px dashed var(--red);z-index:50;place-items:center;font:800 32px Archivo,"Noto Sans JP";color:var(--red)}
+body.dragfile #drop{display:grid}
+#board{display:flex;gap:12px;overflow-x:auto;padding:6px max(3vw,14px) 40px;align-items:flex-start;min-height:70vh}
+.lane{flex:0 0 300px;background:var(--lane);border-top:4px solid var(--ink);display:flex;flex-direction:column;max-height:calc(100vh - 150px)}
+.lane.hot{outline:3px dashed var(--red);outline-offset:-3px}
+.lh{display:flex;align-items:baseline;gap:8px;padding:8px 8px 6px 10px}
+.lh .nm{font:800 18px Archivo,"Noto Sans JP";font-stretch:112%;flex:1;outline:none;border-bottom:1.5px dashed transparent}
+.lh .nm:focus{border-color:var(--mut)}
+.lh .ct{font:800 26px/1 Archivo;font-stretch:112%;font-variant-numeric:tabular-nums}
+.lb{overflow-y:auto;padding:4px 8px 30px;flex:1;min-height:80px}
+.card{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--fam,var(--line));padding:7px 9px 5px;margin:0 0 6px;cursor:grab;position:relative}
+.card.dragging{opacity:.35}
+.card.z-before{box-shadow:0 -4px 0 var(--red)}.card.z-after{box-shadow:0 4px 0 var(--red)}
+.card.z-child{outline:3px dashed var(--red);outline-offset:-3px}
+.card.z-child::after{content:"子にする";position:absolute;right:6px;bottom:4px;background:var(--red);color:#fff;font-size:12px;padding:1px 6px;font-weight:700}
+.kids{margin-left:16px;border-left:1.5px solid var(--line);padding-left:6px}
+.meta{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;font-size:12.5px;color:var(--mut)}
+.meta .id{font:800 14px Archivo;color:var(--ink);font-variant-numeric:tabular-nums;text-decoration:none}
+.meta a.id:hover{text-decoration:underline}
+.tag{border:1px solid var(--line);padding:0 5px;white-space:nowrap}
+.tag.miss{border-color:var(--mut);background:var(--lane)}
+.tag.fl{background:var(--red);border-color:var(--red);color:#fff;font-weight:700}
+.tag.flc{border-color:var(--red);color:var(--red);font-weight:700}
+.ttl{font-weight:600;margin:2px 0 1px;overflow-wrap:anywhere}
+.sub{font-size:12.5px;color:var(--mut);display:flex;flex-wrap:wrap;gap:2px 10px}
+.pchip{color:var(--ink);border-bottom:1.5px solid var(--fam)}
+.memo{font-size:13px;white-space:pre-wrap;border-left:2px solid var(--mut);padding-left:6px;margin:4px 0 0;overflow-wrap:anywhere}
+.acts{display:flex;flex-wrap:wrap;gap:0 2px;margin-top:2px}
+.card.f-moved{border-color:var(--red);animation:glow 1.6s ease-in-out infinite}
+.card.f-new,.card.f-changed{border-color:var(--red)}
+@keyframes glow{50%{box-shadow:0 0 0 4px color-mix(in srgb,var(--red) 35%,transparent)}}
+@media(prefers-reduced-motion:reduce){.card.f-moved{animation:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--red) 35%,transparent)}}
+.apl{display:flex;align-items:center;gap:0;margin:1px 0 0 -4px}
+.apl button{min-height:26px;width:24px;padding:0;border:0;background:none;display:grid;place-items:center}
+.apl button:hover{background:var(--lane);color:inherit}
+.apl svg{width:17px;height:17px;color:var(--line);transition:transform .12s}
+.apl button.on svg{color:var(--red)}
+.apl button:hover svg{transform:scale(1.18)}
+.apl .n{font:800 13px Archivo;margin-left:4px;color:var(--red);font-variant-numeric:tabular-nums}
+.card:not(:hover):not(:focus-within) .apl.zero{opacity:.45}
+.step{display:inline-flex;align-items:center;gap:6px}
+.step button{min-height:32px;width:34px;padding:0}
+.step b{font:800 18px Archivo;min-width:1.6em;text-align:center;color:var(--red)}
+.card.missing .ttl{text-decoration:line-through;text-decoration-color:var(--mut)}
+.edit{display:grid;gap:6px;margin:6px 0 4px}
+.edit textarea{width:100%;min-height:70px;font-size:16px;border:1.5px solid var(--line);padding:6px;background:var(--bg)}
+.edit .row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:13px}
+.edit select,.edit input{height:34px;border:1.5px solid var(--line);background:var(--bg);font-size:14px}
+.addlane{flex:0 0 180px;min-height:52px;border-style:dashed}
+.sample{margin:0 max(3vw,14px) 8px;border-left:5px solid var(--red);padding:6px 10px;background:var(--lane);font-size:13.5px}
+dialog{border:0;border-top:8px solid var(--ink);background:var(--bg);color:var(--ink);padding:18px 20px;width:min(640px,94vw);max-height:88vh}
+dialog::backdrop{background:#0008}
+dialog h2{font:800 22px Archivo,"Noto Sans JP";font-stretch:112%;margin:0 0 10px}
+dialog h3{font-size:15px;margin:18px 0 6px}
+dialog p{margin:4px 0;font-size:13.5px;color:var(--mut)}
+dialog table{border-collapse:collapse;width:100%;font-size:14px}
+dialog td{padding:4px 6px;border-bottom:1px solid var(--line)}
+dialog select,dialog input,dialog textarea{border:1.5px solid var(--line);background:var(--bg);height:34px;font-size:15px;width:100%}
+dialog textarea{height:110px;font:12px/1.4 ui-monospace,monospace}
+.dact{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap}
+#toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;font-size:14px;max-width:92vw;opacity:0;pointer-events:none;transition:opacity .2s;z-index:60}
+#toast.on{opacity:1}
+@media(max-width:600px){#board{flex-direction:column;align-items:stretch}.lane{flex:none;max-height:none}.addlane{flex:none}}
+</style>
+</head>
+<body>
+<header>
+  <h1>ADO手元カンバン</h1>
+  <div class="tools">
+    <button class="red" id="bImport">CSVを取り込む</button>
+    <input type="file" id="file" accept=".csv,text/csv" hidden>
+    <input type="search" id="q" placeholder="ID・タイトル・担当・メモで絞り込み">
+    <label class="chk"><input type="checkbox" id="onlyFlash">変化したものだけ</label>
+    <label class="chk"><input type="checkbox" id="appleSort">リンゴが多い順</label>
+    <button id="bAck">光りを全部消す</button>
+    <button id="bUndo" title="Ctrl+Z">元に戻す</button>
+    <button id="bSet">設定</button>
+  </div>
+</header>
+<div class="info" id="info"></div>
+<div class="sample" id="sampleNote" hidden>いま表示しているのはサンプルデータだよ。ADOのクエリ結果CSVを取り込むと、サンプルは消えて置き換わります。</div>
+<main id="board"></main>
+<div id="drop">CSVをここに離してね</div>
+<div id="toast"></div>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="apple" viewBox="0 0 24 24"><path fill="currentColor" d="M12 7.2c-1.3-1-3-1.4-4.6-.9C4.6 7.1 3.4 10.2 4 13.4c.6 3.5 3 7.4 5.4 7.6.9.1 1.6-.4 2.6-.4s1.7.5 2.6.4c2.4-.2 4.8-4.1 5.4-7.6.6-3.2-.6-6.3-3.4-7.1-1.6-.5-3.3-.1-4.6.9z"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M12 7.4c0-2 .6-3.4 1.8-4.4"/><path fill="currentColor" d="M13.2 5.6c.8-1.9 2.6-2.8 4.6-2.4-.6 1.9-2.5 3-4.6 2.4z"/></symbol></svg>
+
+<dialog id="dMap">
+  <h2>列の割り当て</h2>
+  <p>CSVの見出しから自動で見つけられなかった列があるよ。どの列が何か選んでね（次回からはこの見出しなら自動）。</p>
+  <table id="mapTbl"></table>
+  <div class="dact"><button id="mapCancel">やめる</button><button class="red" id="mapOk">この割り当てで取り込む</button></div>
+</dialog>
+
+<dialog id="dSet">
+  <h2>設定</h2>
+  <h3>Azure DevOps のURL</h3>
+  <p>カードの #ID をリンクにします。末尾にIDが付く形で入れてね。例: https://dev.azure.com/組織/プロジェクト/_workitems/edit/</p>
+  <input id="adoUrl" placeholder="https://dev.azure.com/…/_workitems/edit/">
+  <h3>ADOの状態 → 新規カードの置き場所</h3>
+  <p>新しく来たカードと、状態が変わったカードの移動先。「自動」は名前から推測（Closed/Done系→Done、Active/In Progress系→Doing、それ以外→ToDo）。</p>
+  <table id="stTbl"></table>
+  <h3>列の割り当て</h3>
+  <p id="colInfo"></p>
+  <button id="bRemap">次の取り込みで列を手で選ぶ</button>
+  <h3>バックアップ</h3>
+  <p>データはこのブラウザの中だけに保存されます。別PCへ移すときや念のための控えに。</p>
+  <textarea id="bk"></textarea>
+  <div class="dact" style="justify-content:flex-start"><button id="bCopy">JSONをコピー</button><button id="bLoad">貼ったJSONを読み込む</button><button id="bPurge">CSVに無いカードを削除</button><button id="bReset">全部リセット</button></div>
+  <div class="dact"><button class="red" id="setClose">閉じる</button></div>
+</dialog>
+
+<!--AUTO-->
+<script>
+/*CORE*/
+const DONE_WORDS=['done','closed','resolved','removed','completed','完了','終了','解決済み','削除済み','クローズ'];
+const DOING_WORDS=['active','doing','in progress','committed','in review','進行中','アクティブ','作業中','対応中','レビュー中'];
+const HEAD={id:['id'],title:['title','タイトル'],state:['state','状態'],type:['work item type','作業項目の種類','作業項目タイプ','ワーク アイテムの種類'],assigned:['assigned to','担当者','割り当て先'],parent:['parent','親'],tags:['tags','タグ'],iter:['iteration path','イテレーション パス','反復パス']};
+const FIELD_JA={id:'ID',title:'タイトル',state:'状態(State)',type:'種類',assigned:'担当者',parent:'親ID',tags:'タグ',iter:'イテレーション'};
+function parseCSV(text){
+  text=text.replace(/^﻿/,'');const rows=[];let row=[],f='',q=false;
+  for(let i=0;i<text.length;i++){const c=text[i];
+    if(q){if(c==='"'){if(text[i+1]==='"'){f+='"';i++}else q=false}else f+=c}
+    else if(c==='"')q=true;
+    else if(c===','){row.push(f);f=''}
+    else if(c==='\n'||c==='\r'){if(c==='\r'&&text[i+1]==='\n')i++;row.push(f);rows.push(row);row=[];f=''}
+    else f+=c}
+  if(f!==''||row.length){row.push(f);rows.push(row)}
+  return rows.filter(r=>r.some(x=>x.trim()!==''));
+}
+const norm=h=>String(h).trim().toLowerCase().replace(/\s+/g,' ');
+function detectCols(header){
+  const n=header.map(norm),m={};
+  for(const k in HEAD){const i=n.findIndex(h=>HEAD[k].includes(h));if(i>=0)m[k]=i}
+  const t=[];n.forEach((h,i)=>{const r=h.match(/^(title|タイトル) ?(\d+)$/);if(r)t.push([+r[2],i])});
+  t.sort((a,b)=>a[0]-b[0]);m.tree=t.map(x=>x[1]);return m;
+}
+const colsOk=m=>m.id!=null&&m.state!=null&&(m.title!=null||m.tree.length>0);
+function toItems(rows,m){
+  const out=[],stack=[],g=(r,k)=>m[k]!=null?String(r[m[k]]??'').trim():'';
+  for(const r of rows.slice(1)){
+    const id=g(r,'id').replace(/^#/,'');if(!id)continue;
+    let title=g(r,'title'),parent=g(r,'parent').replace(/^#/,'');
+    if(m.tree.length){let lv=m.tree.findIndex(i=>String(r[i]??'').trim());if(lv<0)lv=0;
+      if(!title)title=String(r[m.tree[lv]]??'').trim();stack[lv]=id;stack.length=lv+1;if(!parent&&lv>0)parent=stack[lv-1]||''}
+    out.push({id,title,state:g(r,'state'),type:g(r,'type'),assigned:g(r,'assigned').replace(/\s*<[^>]*>\s*/g,''),tags:g(r,'tags'),iter:g(r,'iter').split('\\').pop(),parent});
+  }
+  return out;
+}
+function stateLane(st,S){
+  const ids=S.lanes.map(l=>l.id),pick=x=>ids.includes(x)?x:ids[0];
+  const mp=S.settings.stateMap[st];if(mp&&ids.includes(mp))return mp;
+  const s=norm(st||'');
+  if(DONE_WORDS.includes(s))return pick('done');
+  if(DOING_WORDS.includes(s))return pick('doing');
+  return pick('todo');
+}
+function maxOrder(S,lane){let m=-1;for(const c of Object.values(S.cards))if(c.lane===lane&&c.order>m)m=c.order;return m}
+function merge(S,items){
+  const seen=new Set(),rep={added:0,moved:0,changed:0,missing:0,total:items.length};
+  for(const it of items){seen.add(it.id);let c=S.cards[it.id];
+    const f={title:it.title,type:it.type,assigned:it.assigned,tags:it.tags,iter:it.iter,parent:it.parent};
+    if(!c){const lane=stateLane(it.state,S);
+      c=S.cards[it.id]={id:it.id,lane,order:maxOrder(S,lane)+1,memo:'',adoState:it.state,...f,flash:{kind:'new',text:'新規'}};rep.added++}
+    else{const old=c.adoState;Object.assign(c,f);c.adoState=it.state;
+      if(old!==it.state){const ol=stateLane(old,S),nl=stateLane(it.state,S);
+        if(c.lane!==nl&&(nl==='done'||c.lane===ol)){c.lane=nl;c.order=maxOrder(S,nl)+1;c.flash={kind:'moved',text:old+' → '+it.state};rep.moved++}
+        else{c.flash={kind:'changed',text:old+' → '+it.state};rep.changed++}}}
+    c.missing=false}
+  for(const c of Object.values(S.cards))if(!seen.has(c.id)&&!c.missing){c.missing=true;rep.missing++}
+  return rep;
+}
+function ep(S,c){if(!c)return null;const p=('lp' in c)?c.lp:(c.parent||null);return p&&p!==c.id&&S.cards[p]?p:null}
+function isAnc(S,a,b){let p=ep(S,S.cards[b]),g=0;while(p&&g++<60){if(p===a)return true;p=ep(S,S.cards[p])}return false}
+/*ENDCORE*/
+{
+const KEY='ado-kanban-v1';
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const $=id=>document.getElementById(id);
+const fresh=()=>({lanes:[{id:'todo',name:'ToDo'},{id:'doing',name:'Doing'},{id:'paused',name:'中断'},{id:'done',name:'Done'}],cards:{},settings:{stateMap:{},adoUrl:'',colMaps:{},forceMap:false},last:null,sample:false,fold:{}});
+function sampleState(){
+  const S=fresh();S.sample=true;
+  const raw=[['1201','User Story','会員ログイン刷新','Active','',''],['1202','Task','ログイン画面のUI改修','Active','1201','先週から止まってる。デザイン待ち'],['1203','Task','パスワードリセットAPI','New','1201',''],['1204','Bug','iOSでセッションが切れる','Active','','再現手順を聞いてから再開'],['1205','Task','監査ログの出力項目追加','Active','',''],['1206','Task','CI のキャッシュ設定','Closed','',''],['1207','User Story','帳票PDF出力','New','',''],['1208','Task','帳票テンプレート作成','New','1207',''],['1209','Task','SSO連携の調査','Active','1201','']];
+  raw.forEach(([id,type,title,st,par,memo],i)=>{S.cards[id]={id,type,title,adoState:st,parent:par,memo,assigned:'ねぶきん',tags:'',iter:'Sprint 42',lane:stateLane(st,S),order:i,missing:false,flash:null}});
+  S.cards['1204'].apples=3;S.cards['1201'].apples=2;S.cards['1205'].apples=1;S.cards['1209'].apples=7;
+  S.cards['1202'].lane='paused';S.cards['1204'].lane='paused';
+  S.cards['1206'].flash={kind:'moved',text:'Active → Closed'};S.cards['1209'].flash={kind:'new',text:'新規'};
+  S.last={at:Date.now(),rep:{added:1,moved:1,changed:0,missing:0,total:9}};return S;
+}
+let S;try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}
+if(!S||!S.lanes)S=sampleState();
+S.fold??={};S.settings.colMaps??={};
+let undo=[],editing=null,dragId=null,pending=null;
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
+const snap=()=>{undo.push(JSON.stringify(S));if(undo.length>40)undo.shift()};
+function toast(t){const e=$('toast');e.textContent=t;e.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>e.classList.remove('on'),3800)}
+function hue(id){let h=0;for(const ch of String(id))h=(h*31+ch.charCodeAt(0))>>>0;return h%360}
+function rootOf(c){let r=c,g=0,p;while((p=ep(S,r))&&g++<60)r=S.cards[p];return r.id}
+
+function render(){
+  const q=$('q').value.trim().toLowerCase(),only=$('onlyFlash').checked;
+  const all=Object.values(S.cards),hasKid=new Set();
+  for(const c of all){const p=ep(S,c);if(p)hasKid.add(p)}
+  const vis=c=>(!only||c.flash)&&(!q||[c.id,c.title,c.assigned,c.tags,c.memo,c.type].join(' ').toLowerCase().includes(q));
+  const url=S.settings.adoUrl;
+  const cardHtml=(c,kidsN)=>{
+    const p=ep(S,c),pc=p&&S.cards[p],fam=(p||hasKid.has(c.id))?`--fam:hsl(${hue(rootOf(c))} 70% 45%)`:'';
+    const idh=url?`<a class="id" href="${esc(url+c.id)}" target="_blank" rel="noopener">#${esc(c.id)}</a>`:`<span class="id">#${esc(c.id)}</span>`;
+    const fl=c.flash?`<span class="tag ${c.flash.kind==='changed'?'flc':'fl'}">${c.flash.kind==='moved'?'自動移動 ':c.flash.kind==='changed'?'ADO変更 ':''}${esc(c.flash.text)}</span>`:'';
+    const chip=pc&&pc.lane!==c.lane?`<span>親: <span class="pchip">#${esc(pc.id)} ${esc(pc.title)}</span></span>`:'';
+    const ed=editing===c.id?`<div class="edit"><textarea data-memo="${esc(c.id)}" placeholder="中断理由・次にやること など">${esc(c.memo)}</textarea>
+      <div class="row">レーン <select data-lane="${esc(c.id)}">${S.lanes.map(l=>`<option value="${esc(l.id)}"${l.id===c.lane?' selected':''}>${esc(l.name)}</option>`).join('')}</select>
+      親ID <input data-par="${esc(c.id)}" value="${esc(p||'')}" size="7" inputmode="numeric"></div>
+      <div class="row">自分用の優先度 <span class="step"><button data-act="aminus" aria-label="リンゴを減らす">−</button><b>${c.apples||0}</b><button data-act="aplus" aria-label="リンゴを増やす">＋</button></span><span>個</span><button class="ghost" data-act="done">閉じる</button></div></div>`:
+      (c.memo?`<div class="memo">${esc(c.memo)}</div>`:'');
+    return `<article class="card${c.flash?' f-'+c.flash.kind:''}${c.missing?' missing':''}" draggable="true" data-id="${esc(c.id)}" style="${fam}">
+      <div class="meta">${idh}${c.type?`<span>${esc(c.type)}</span>`:''}<span class="tag">${esc(c.adoState||'—')}</span>${c.missing?'<span class="tag miss">CSVに無い</span>':''}${fl}</div>
+      <div class="ttl">${esc(c.title)}</div>
+      <div class="apl${c.apples?'':' zero'}" title="クリックでリンゴの数を設定（同じ所をもう一度押すと1個減る）">${[1,2,3,4,5].map(k=>`<button data-apple="${k}" class="${k<=(c.apples||0)?'on':''}" aria-label="リンゴ${k}個"><svg><use href="#apple"/></svg></button>`).join('')}${(c.apples||0)>5?`<span class="n">×${c.apples}</span>`:''}</div>
+      <div class="sub">${c.assigned?`<span>${esc(c.assigned)}</span>`:''}${chip}</div>${ed}
+      <div class="acts"><button class="ghost" data-act="edit">${editing===c.id?'':'メモ・編集'}</button>${p?'<button class="ghost" data-act="unparent">親から外す</button>':''}${kidsN?`<button class="ghost" data-act="fold">${S.fold[c.id]?'▸ 子'+kidsN+'件を表示':'▾ 子'+kidsN+'件'}</button>`:''}</div></article>`;
+  };
+  let h='';
+  S.lanes.forEach((l,li)=>{
+    const list=all.filter(c=>c.lane===l.id).sort((a,b)=>(S.settings.appleSort?(b.apples||0)-(a.apples||0):0)||a.order-b.order),shown=list.filter(vis),ids=new Set(shown.map(c=>c.id));
+    const kids={},roots=[],done=new Set();
+    for(const c of shown){const p=ep(S,c);if(p&&ids.has(p))(kids[p]??=[]).push(c);else roots.push(c)}
+    const tree=c=>{if(done.has(c.id))return '';done.add(c.id);const k=kids[c.id]||[];
+      return cardHtml(c,k.length)+(k.length&&!S.fold[c.id]?`<div class="kids">${k.map(tree).join('')}</div>`:'')};
+    let body=roots.map(tree).join('');
+    for(const c of shown)if(!done.has(c.id)&&!(S.fold[ep(S,c)]))body+=tree(c);
+    h+=`<section class="lane" data-lane="${esc(l.id)}"><div class="lh"><span class="nm" contenteditable="plaintext-only" spellcheck="false" data-rename="${esc(l.id)}">${esc(l.name)}</span><span class="ct">${list.length}</span>
+      <button class="ghost" data-lmove="-1" data-l="${li}" aria-label="左へ"${li?'':' disabled'}>←</button><button class="ghost" data-lmove="1" data-l="${li}" aria-label="右へ"${li<S.lanes.length-1?'':' disabled'}>→</button><button class="ghost" data-ldel="${esc(l.id)}" aria-label="レーン削除">×</button></div>
+      <div class="lb">${body||'<p style="color:var(--mut);font-size:13px;margin:8px 2px">ここにドロップ</p>'}</div></section>`;
+  });
+  h+='<button class="addlane" id="bAddLane">＋ レーンを足す</button>';
+  $('board').innerHTML=h;
+  const fl=all.filter(c=>c.flash).length,miss=all.filter(c=>c.missing).length,L=S.last;
+  $('info').innerHTML=(L?`<span>最終取り込み <b>${esc(new Date(L.at).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}))}</b></span><span>CSV ${L.rep.total}件 · 新規 ${L.rep.added} · <span class="r">自動移動 ${L.rep.moved}</span> · ADO状態変化 ${L.rep.changed} · CSVから消えた ${L.rep.missing}</span>`:'<span>まだ取り込んでないよ</span>')+
+    `<span>光っているカード <b>${fl}</b></span>${miss?`<span>CSVに無い <b>${miss}</b></span>`:''}<span>並び順＝優先度（上ほど高い）· カードの真ん中に落とすと子になる</span>`;
+  $('sampleNote').hidden=!S.sample;
+}
+function commit(){save();render()}
+
+/* import */
+function importText(text,name){
+  const rows=parseCSV(text);if(rows.length<2){toast('CSVの中身が空っぽみたい…');return}
+  const header=rows[0],sig=header.map(norm).join('|');
+  let m=S.settings.colMaps[sig]||detectCols(header);
+  if(!colsOk(m)||S.settings.forceMap){pending={rows,sig,header,m};openMap();return}
+  doImport(rows,m,header);
+}
+function doImport(rows,m,header){
+  snap();if(S.sample){const n=fresh();n.settings=S.settings;n.lanes=S.lanes.some(l=>l.id==='done')?S.lanes:n.lanes;S=n}
+  for(const c of Object.values(S.cards))c.flash=null;
+  const items=toItems(rows,m),rep=merge(S,items);
+  S.last={at:Date.now(),rep};S.lastCols=Object.entries(m).filter(([k,v])=>k!=='tree'&&v!=null).map(([k,v])=>FIELD_JA[k]+'='+header[v]).join(', ')+(m.tree.length?`, ツリー列=${m.tree.map(i=>header[i]).join('/')}`:'');
+  S.parentSrc=m.parent!=null?'Parent列':m.tree.length?'ツリー(Title 1,2…)':'なし';
+  commit();toast(`取り込み完了: 新規${rep.added} / 自動移動${rep.moved} / 状態変化${rep.changed} / 消えた${rep.missing}（親情報: ${S.parentSrc}）`);
+}
+function readFile(f){if(!f)return;const r=new FileReader();r.onload=()=>importText(String(r.result),f.name);r.readAsText(f,'utf-8')}
+function openMap(){
+  const {header,m}=pending,opts=v=>`<option value="">（なし）</option>`+header.map((h,i)=>`<option value="${i}"${v===i?' selected':''}>${esc(h)}</option>`).join('');
+  $('mapTbl').innerHTML=['id','title','state','type','assigned','parent','tags'].map(k=>`<tr><td>${FIELD_JA[k]}${['id','state'].includes(k)?' *':''}</td><td><select data-k="${k}">${opts(m[k])}</select></td></tr>`).join('')+
+    (m.tree.length?`<tr><td colspan="2">ツリー列 ${m.tree.map(i=>esc(header[i])).join(' / ')} を検出 → 親子はここから作るよ</td></tr>`:'');
+  $('dMap').showModal();
+}
+$('mapOk').onclick=()=>{const m={tree:pending.m.tree||[]};
+  for(const s of $('mapTbl').querySelectorAll('select'))m[s.dataset.k]=s.value===''?null:+s.value;
+  if(!colsOk(m)){toast('ID・状態・タイトル（かツリー列）は必須だよ');return}
+  S.settings.colMaps[pending.sig]=m;S.settings.forceMap=false;$('dMap').close();doImport(pending.rows,m,pending.header);pending=null};
+$('mapCancel').onclick=()=>{$('dMap').close();pending=null};
+$('bImport').onclick=()=>$('file').click();
+$('file').onchange=e=>{readFile(e.target.files[0]);e.target.value=''};
+let fileDrag=0;
+addEventListener('dragenter',e=>{if(e.dataTransfer?.types?.includes('Files')){fileDrag++;document.body.classList.add('dragfile')}});
+addEventListener('dragleave',e=>{if(e.dataTransfer?.types?.includes('Files')&&--fileDrag<=0){fileDrag=0;document.body.classList.remove('dragfile')}});
+addEventListener('dragover',e=>{if(e.dataTransfer?.types?.includes('Files'))e.preventDefault()});
+addEventListener('drop',e=>{if(e.dataTransfer?.files?.length){e.preventDefault();fileDrag=0;document.body.classList.remove('dragfile');readFile(e.dataTransfer.files[0])}});
+
+/* card drag & drop */
+const B=$('board');
+const clearZ=()=>B.querySelectorAll('.z-before,.z-after,.z-child,.hot').forEach(e=>e.classList.remove('z-before','z-after','z-child','hot'));
+const laneCards=l=>Object.values(S.cards).filter(c=>c.lane===l).sort((a,b)=>a.order-b.order);
+function placeNear(card,target,after){const arr=laneCards(target.lane).filter(c=>c.id!==card.id);let i=arr.indexOf(target)+(after?1:0);arr.splice(i,0,card);card.lane=target.lane;arr.forEach((c,k)=>c.order=k)}
+B.addEventListener('dragstart',e=>{const el=e.target.closest?.('.card');if(!el)return;dragId=el.dataset.id;e.dataTransfer.setData('text/plain',dragId);e.dataTransfer.effectAllowed='move';setTimeout(()=>el.classList.add('dragging'))});
+B.addEventListener('dragend',()=>{dragId=null;clearZ();B.querySelectorAll('.dragging').forEach(e=>e.classList.remove('dragging'))});
+function zoneOf(e){const el=e.target.closest('.card');if(el&&el.dataset.id!==dragId){const r=el.getBoundingClientRect(),y=(e.clientY-r.top)/r.height;return{el,z:y<.28?'before':y>.72?'after':'child'}}
+  const ln=e.target.closest('.lane');return ln?{ln}:null}
+B.addEventListener('dragover',e=>{if(!dragId)return;e.preventDefault();clearZ();const z=zoneOf(e);if(!z)return;if(z.el)z.el.classList.add('z-'+z.z);else z.ln.classList.add('hot')});
+B.addEventListener('drop',e=>{if(!dragId)return;e.preventDefault();const z=zoneOf(e);clearZ();if(!z)return;
+  const card=S.cards[dragId];
+  if(z.el){const t=S.cards[z.el.dataset.id];
+    if(z.z==='child'){if(isAnc(S,card.id,t.id)){toast('自分の子孫の下には入れられないよ（ループになっちゃう）');return}
+      snap();card.lp=t.id;placeNear(card,t,true);card.flash=null;commit();toast(`#${card.id} を #${t.id} の子にしたよ`);return}
+    snap();const tp=ep(S,t),tpIn=tp&&S.cards[tp].lane===t.lane;placeNear(card,t,z.z==='after');
+    if(tpIn){if(tp!==card.id&&ep(S,card)!==tp&&!isAnc(S,card.id,tp))card.lp=tp}
+    else{const cp=ep(S,card);if(cp&&S.cards[cp].lane===t.lane)card.lp=null}
+  }else{snap();card.lane=z.ln.dataset.lane;card.order=maxOrder(S,card.lane)+1}
+  card.flash=null;commit()});
+
+/* clicks */
+B.addEventListener('click',e=>{
+  const b=e.target.closest('button');
+  if(b?.id==='bAddLane'){snap();S.lanes.push({id:'l'+Date.now().toString(36),name:'新しいレーン'});commit();return}
+  if(b?.dataset.lmove){snap();const i=+b.dataset.l,j=i+ +b.dataset.lmove;[S.lanes[i],S.lanes[j]]=[S.lanes[j],S.lanes[i]];commit();return}
+  if(b?.dataset.ldel){const id=b.dataset.ldel;if(laneCards(id).length){toast('カードが残ってるレーンは消せないよ。先に移動してね');return}
+    if(S.lanes.length<2)return;snap();S.lanes=S.lanes.filter(l=>l.id!==id);commit();return}
+  const el=e.target.closest('.card');if(!el||e.target.closest('a,textarea,select,input'))return;const c=S.cards[el.dataset.id],act=b?.dataset.act;
+  if(b?.dataset.apple){const k=+b.dataset.apple;snap();c.apples=(c.apples||0)===k?k-1:k;c.flash=null;commit();return}
+  if(act==='aplus'||act==='aminus'){snap();c.apples=Math.max(0,Math.min(99,(c.apples||0)+(act==='aplus'?1:-1)));commit();return}
+  if(act==='edit'){editing=c.id;c.flash=null;commit();B.querySelector(`textarea[data-memo="${CSS.escape(c.id)}"]`)?.focus();return}
+  if(act==='done'){editing=null;commit();return}
+  if(act==='unparent'){snap();c.lp=null;commit();return}
+  if(act==='fold'){S.fold[c.id]=!S.fold[c.id];commit();return}
+  if(c.flash){c.flash=null;commit()}
+});
+B.addEventListener('change',e=>{const t=e.target;
+  if(t.dataset.memo!=null){snap();S.cards[t.dataset.memo].memo=t.value;save()}
+  if(t.dataset.lane!=null){snap();const c=S.cards[t.dataset.lane];c.lane=t.value;c.order=maxOrder(S,t.value)+1;commit()}
+  if(t.dataset.par!=null){const c=S.cards[t.dataset.par],v=t.value.trim().replace(/^#/,'');
+    if(v&&(!S.cards[v]||v===c.id||isAnc(S,c.id,v))){toast('その親IDは使えないよ（存在しない or ループ）');t.value=ep(S,c)||'';return}
+    snap();c.lp=v||null;commit()}});
+B.addEventListener('focusout',e=>{const n=e.target.dataset?.rename;if(n){const l=S.lanes.find(x=>x.id===n),v=e.target.textContent.trim();if(l&&v&&v!==l.name){snap();l.name=v;commit()}}});
+B.addEventListener('keydown',e=>{if(e.target.dataset?.rename&&e.key==='Enter'){e.preventDefault();e.target.blur()}});
+
+$('q').oninput=render;$('onlyFlash').onchange=render;
+$('appleSort').checked=!!S.settings.appleSort;
+$('appleSort').onchange=e=>{S.settings.appleSort=e.target.checked;commit()};
+$('bAck').onclick=()=>{snap();for(const c of Object.values(S.cards))c.flash=null;commit()};
+function doUndo(){const s=undo.pop();if(!s){toast('これ以上戻れないよ');return}S=JSON.parse(s);editing=null;commit();toast('ひとつ戻したよ')}
+$('bUndo').onclick=doUndo;
+addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='z'&&!e.target.closest('input,textarea,[contenteditable]')){e.preventDefault();doUndo()}});
+
+/* settings */
+$('bSet').onclick=()=>{
+  $('adoUrl').value=S.settings.adoUrl||'';
+  const states=[...new Set(Object.values(S.cards).map(c=>c.adoState).filter(Boolean))].sort();
+  $('stTbl').innerHTML=states.length?states.map(s=>`<tr><td>${esc(s)}</td><td><select data-st="${esc(s)}"><option value="">自動（${esc(S.lanes.find(l=>l.id===stateLane(s,{...S,settings:{...S.settings,stateMap:{}}}))?.name||'')}）</option>${S.lanes.map(l=>`<option value="${esc(l.id)}"${S.settings.stateMap[s]===l.id?' selected':''}>${esc(l.name)}</option>`).join('')}</select></td></tr>`).join(''):'<tr><td>CSVを取り込むと状態の一覧が出るよ</td></tr>';
+  $('colInfo').textContent=S.lastCols?`前回: ${S.lastCols}（親情報: ${S.parentSrc}）`:'まだ取り込みなし';
+  $('bk').value=JSON.stringify(S);$('dSet').showModal()};
+$('adoUrl').onchange=e=>{S.settings.adoUrl=e.target.value.trim();commit()};
+$('stTbl').onchange=e=>{const s=e.target.dataset.st;if(s==null)return;if(e.target.value)S.settings.stateMap[s]=e.target.value;else delete S.settings.stateMap[s];commit()};
+$('bRemap').onclick=()=>{S.settings.forceMap=true;save();toast('次のCSV取り込みで列の割り当て画面を出すね')};
+$('bCopy').onclick=async()=>{try{await navigator.clipboard.writeText($('bk').value);toast('コピーしたよ')}catch(e){$('bk').select();toast('自動コピーできなかったから、選択した状態にしたよ。Ctrl+Cしてね')}};
+$('bLoad').onclick=()=>{try{const n=JSON.parse($('bk').value);if(!n.lanes||!n.cards)throw 0;snap();S=n;S.fold??={};commit();toast('読み込んだよ')}catch(e){toast('JSONが読めなかった…')}};
+let armP=0,armR=0;
+$('bPurge').onclick=e=>{const n=Object.values(S.cards).filter(c=>c.missing);if(!n.length){toast('CSVに無いカードはないよ');return}
+  if(Date.now()-armP>4000){armP=Date.now();e.target.textContent=`もう一度押すと${n.length}件削除`;return}
+  snap();n.forEach(c=>delete S.cards[c.id]);armP=0;e.target.textContent='CSVに無いカードを削除';commit();$('bk').value=JSON.stringify(S);toast(`${n.length}件削除したよ（元に戻す可）`)};
+$('bReset').onclick=e=>{if(Date.now()-armR>4000){armR=Date.now();e.target.textContent='もう一度押すと全消去';return}
+  snap();S=fresh();armR=0;e.target.textContent='全部リセット';commit();$('dSet').close();toast('リセットしたよ（元に戻す可）')};
+$('setClose').onclick=()=>$('dSet').close();
+
+render();
+/* Streamlit 版: ボタンで取ってきたCSVが埋め込まれていたら自動で取り込む（同じものは1回だけ） */
+const A=window.__AUTO_CSV__;
+if(A&&A.text){let last=null;try{last=localStorage.getItem(KEY+'-auto')}catch(e){}
+  if(last!==String(A.id)){try{localStorage.setItem(KEY+'-auto',String(A.id))}catch(e){}importText(A.text,'ADO自動取得')}}
+}
+</script>
+</body>
+</html>

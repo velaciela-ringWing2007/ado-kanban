@@ -1,0 +1,6 @@
+ado_kanban_config.json
+latest_ado.csv
+__pycache__/
+.venv/
+venv/
+*.pyc
